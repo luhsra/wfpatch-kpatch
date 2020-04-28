@@ -321,7 +321,7 @@ void kpatch_create_symbol_list(struct kpatch_elf *kelf)
 static void kpatch_find_func_profiling_calls(struct kpatch_elf *kelf)
 {
 	struct symbol *sym;
-	struct rela *rela;
+	/* struct rela *rela; */
 	list_for_each_entry(sym, &kelf->symbols, list) {
 		if (sym->type != STT_FUNC || !sym->sec || !sym->sec->rela)
 			continue;
@@ -333,13 +333,13 @@ static void kpatch_find_func_profiling_calls(struct kpatch_elf *kelf)
 			}
 		}
 #else
-		rela = list_first_entry(&sym->sec->rela->relas, struct rela,
-					list);
-		if ((rela->type != R_X86_64_NONE &&
-		     rela->type != R_X86_64_PC32 &&
-		     rela->type != R_X86_64_PLT32) ||
-		    strcmp(rela->sym->name, "__fentry__"))
-			continue;
+		/* rela = list_first_entry(&sym->sec->rela->relas, struct rela, */
+		/* 			list); */
+		/* if ((rela->type != R_X86_64_NONE && */
+		/*      rela->type != R_X86_64_PC32 && */
+		/*      rela->type != R_X86_64_PLT32) || */
+		/*     strcmp(rela->sym->name, "__fentry__")) */
+		/* 	continue; */
 
 		sym->has_func_profiling = 1;
 #endif
