@@ -279,6 +279,9 @@ static void symtab_read(struct lookup_table *table, char *path)
 			table->obj_syms[i].type = STT_FUNC;
 		} else if (!strcmp(type, "FILE")) {
 			table->obj_syms[i].type = STT_FILE;
+        } else if (!strcmp(type, "TLS")) {
+			table->obj_syms[i].type = STT_OBJECT;
+            log_normal("thread-local storage: %s\n", name);
 		} else {
 			ERROR("unknown symbol type %s", type);
 		}
