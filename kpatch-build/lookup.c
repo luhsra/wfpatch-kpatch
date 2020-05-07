@@ -271,7 +271,6 @@ static void symtab_read(struct lookup_table *table, char *path)
             table->exp_syms[e].name = strdup(name);
             table->exp_syms[e].objname = strdup("dl");
 
-            printf("%d '%s' '%s'\n", e,table->exp_syms[e].name, table->exp_syms[e].objname);
             table->exp_nr ++;
             continue;
         }
