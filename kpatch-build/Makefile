@@ -41,10 +41,13 @@ install: all
 	$(INSTALL) $(TARGETS) kpatch-gcc $(LIBEXECDIR)
 	$(INSTALL) -d $(BINDIR)
 	$(INSTALL) kpatch-build $(BINDIR)
+	$(INSTALL) create-diff-object $(BINDIR)
+
 
 uninstall:
 	$(RM) -R $(LIBEXECDIR)
 	$(RM) $(BINDIR)/kpatch-build
+	$(RM) $(BINDIR)/create-diff-object
 
 clean:
 	$(RM) $(TARGETS) *.{o,d} insn/*.{o,d} gcc-plugins/*.{so,d}
