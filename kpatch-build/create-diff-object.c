@@ -1566,11 +1566,11 @@ static void kpatch_check_func_profiling_calls(struct kpatch_elf *kelf)
 		if (sym->type != STT_FUNC || sym->status != CHANGED ||
 		    (sym->parent && sym->parent->status == CHANGED))
 			continue;
-		if (!sym->twin->has_func_profiling) {
-			log_normal("function %s has no fentry/mcount call, unable to patch\n",
-				   sym->name);
-			errs++;
-		}
+		//if (!sym->twin->has_func_profiling) {
+		//	log_normal("function %s has no fentry/mcount call, unable to patch\n",
+		//		   sym->name);
+		//	errs++;
+		//}
 	}
 
 	if (errs)
