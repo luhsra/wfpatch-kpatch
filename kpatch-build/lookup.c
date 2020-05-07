@@ -69,6 +69,9 @@ struct lookup_table {
 #define for_each_exp_symbol(ndx, iter, table) \
 	for (ndx = 0, iter = table->exp_syms; ndx < table->exp_nr; ndx++, iter++)
 
+static bool lookup_exported_symbol(struct lookup_table *table, char *name,
+                                   struct lookup_result *result);
+
 static int maybe_discarded_sym(const char *name)
 {
 	if (!name)
@@ -180,6 +183,7 @@ static void find_local_syms(struct lookup_table *table, char *hint,
 }
 
 /* Strip the path and replace '-' with '_' */
+#if 0
 static char *make_modname(char *modname)
 {
 	char *cur, *name;
@@ -200,6 +204,7 @@ static char *make_modname(char *modname)
 
 	return name;
 }
+#endif
 
 static void symtab_read(struct lookup_table *table, char *path)
 {
@@ -225,6 +230,11 @@ static void symtab_read(struct lookup_table *table, char *path)
 		ERROR("malloc table.obj_syms");
 	memset(table->obj_syms, 0, alloc_nr * sizeof(*table->obj_syms));
 
+    table->exp_syms = malloc(alloc_nr * sizeof(*table->exp_syms));
+	if (!table->exp_syms)
+		ERROR("malloc table.exp_syms");
+	memset(table->exp_syms, 0, alloc_nr * sizeof(*table->exp_syms));
+
 	rewind(file);
 
 	/* Now read the actual entries: */
@@ -242,11 +252,34 @@ static void symtab_read(struct lookup_table *table, char *path)
 			skip = false;
 			continue;
 		}
+
+        matched = sscanf(line, "%*s %lx %s %s %s %*s %s %s\n",
+                         &addr, size, type, bind, ndx, name);
+
+        if (matched == 6 && (!strcmp(ndx, "UND") || strstr(name, "@"))) {
+            int e = table->exp_nr;
+            table->exp_syms[e].name = strdup(name);
+            char *p = strstr(name, "@");
+            if (p) {
+                while (*p == '@') {
+                    *p = '\0'; p++;
+                }
+            }
+            if (lookup_exported_symbol(table, name, NULL)) {
+                continue; // We already have this symbol
+            }
+            table->exp_syms[e].name = strdup(name);
+            table->exp_syms[e].objname = strdup("dl");
+
+            printf("%d '%s' '%s'\n", e,table->exp_syms[e].name, table->exp_syms[e].objname);
+            table->exp_nr ++;
+            continue;
+        }
+
+
 		if (skip)
 			continue;
 
-		matched = sscanf(line, "%*s %lx %s %s %s %*s %s %s\n",
-				 &addr, size, type, bind, ndx, name);
 
 		if (matched == 5) {
 			name[0] = '\0';
@@ -254,9 +287,9 @@ static void symtab_read(struct lookup_table *table, char *path)
 		}
 
 		if (matched != 6 ||
-		    !strcmp(ndx, "UND") ||
 		    !strcmp(type, "SECTION"))
 			continue;
+
 
 		table->obj_syms[i].addr = addr;
 		table->obj_syms[i].size = strtoul(size, NULL, 0);
@@ -310,6 +343,7 @@ static void symtab_read(struct lookup_table *table, char *path)
  * we have to dynamically determine which column is Module by looking for
  * "vmlinux".
  */
+#if 0
 static void symvers_read(struct lookup_table *table, char *path)
 {
 	FILE *file;
@@ -370,6 +404,7 @@ static void symvers_read(struct lookup_table *table, char *path)
 
 	fclose(file);
 }
+#endif
 
 struct lookup_table *lookup_open(char *symtab_path, char *objname,
 				 char *symvers_path, char *hint,
@@ -384,7 +419,9 @@ struct lookup_table *lookup_open(char *symtab_path, char *objname,
 
 	table->objname = objname;
 	symtab_read(table, symtab_path);
-	symvers_read(table, symvers_path);
+    // wf-userlang: We no longer read the Module.symvers file.
+    // Instead, we consider all undfined symbols.
+    // symvers_read(table, symvers_path);
 	find_local_syms(table, hint, locals);
 
 	return table;
