@@ -295,7 +295,8 @@ static void symtab_read(struct lookup_table *table, char *path)
 
 		if (!strcmp(bind, "LOCAL")) {
 			table->obj_syms[i].bind = STB_LOCAL;
-		} else if (!strcmp(bind, "GLOBAL")) {
+		} else if (!strcmp(bind, "GLOBAL")
+                   || !strcmp(bind, "UNIQUE") ) {
 			table->obj_syms[i].bind = STB_GLOBAL;
 		} else if (!strcmp(bind, "WEAK")) {
 			table->obj_syms[i].bind = STB_WEAK;
