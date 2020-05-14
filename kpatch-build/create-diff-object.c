@@ -92,6 +92,10 @@ struct special_section {
 
 static int is_bundleable(struct symbol *sym)
 {
+    if (sym->sym.st_shndx == SHN_COMMON) {
+        return 0;
+    }
+
 	if (sym->type == STT_FUNC &&
 	    !strncmp(sym->sec->name, ".text.",6) &&
 	    !strcmp(sym->sec->name + 6, sym->name))
@@ -108,6 +112,7 @@ static int is_bundleable(struct symbol *sym)
 	    !strncmp(sym->sec->name, ".text.hot.",10) &&
 	    !strcmp(sym->sec->name + 10, sym->name))
 		return 1;
+
 
 	if (sym->type == STT_OBJECT &&
 	   !strncmp(sym->sec->name, ".data.",6) &&
@@ -294,7 +299,7 @@ static void kpatch_detect_child_functions(struct kpatch_elf *kelf)
 
 static bool is_dynamic_debug_symbol(struct symbol *sym)
 {
-	if (sym->type == STT_OBJECT && !strcmp(sym->sec->name, "__verbose"))
+	if (sym->type == STT_OBJECT && sym->sec && !strcmp(sym->sec->name, "__verbose"))
 		return true;
 	if (sym->type == STT_SECTION && !strcmp(sym->name, "__verbose"))
 		return true;
@@ -315,6 +320,7 @@ static int is_special_static(struct symbol *sym)
 		"__warned.",
 		"__func__.",
 		"__FUNCTION__.",
+        "__PRETTY_FUNCTION__.",
 		"_rs.",
 		"CSWTCH.",
 		NULL,
@@ -820,7 +826,8 @@ static void kpatch_compare_correlated_symbol(struct symbol *sym)
 		DIFF_FATAL("object size mismatch: %s", sym1->name);
 
 	if (sym1->sym.st_shndx == SHN_UNDEF ||
-	     sym1->sym.st_shndx == SHN_ABS)
+	     sym1->sym.st_shndx == SHN_ABS ||
+         sym1->sym.st_shndx == SHN_COMMON)
 		sym1->status = SAME;
 
 	/*
@@ -889,7 +896,7 @@ static void kpatch_correlate_section(struct section *sec1, struct section *sec2)
 		__kpatch_correlate_section(sec1->base, sec2->base);
 		sec1 = sec1->base;
 		sec2 = sec2->base;
-	} else if (sec1->rela) {
+	} else if (sec1->rela && sec2->rela) {
 		__kpatch_correlate_section(sec1->rela, sec2->rela);
 	}
 
@@ -2504,7 +2511,7 @@ static void kpatch_include_debug_sections(struct kpatch_elf *kelf)
 		if (!is_rela_section(sec) || !is_debug_section(sec))
 			continue;
 		list_for_each_entry_safe(rela, saferela, &sec->relas, list)
-			if (!rela->sym->sec->include)
+			if (rela->sym->sec && !rela->sym->sec->include)
 				list_del(&rela->list);
 	}
 }
@@ -2958,7 +2965,7 @@ static bool need_dynrela(struct lookup_table *table, const struct rela *rela)
 	 * Allow references to core module symbols to remain as normal
 	 * relas.  They should be exported.
 	 */
-	if (kpatch_is_core_module_symbol(rela->sym->name))
+    if (kpatch_is_core_module_symbol(rela->sym->name))
 		return false;
 
 	if (rela->sym->sec) {
@@ -3016,6 +3023,7 @@ static bool need_dynrela(struct lookup_table *table, const struct rela *rela)
 		 * The symbol is (formerly) local.  Use a dynrela to access the
 		 * original version of the symbol in the patched object.
 		 */
+
 		return true;
 	}
 
@@ -3111,6 +3119,9 @@ static void kpatch_create_intermediate_sections(struct kpatch_elf *kelf,
 			/* upper bound on number of kpatch relas and symbols */
 			nr++;
 
+            if (!rela->sym->name)
+                continue;
+
 			/*
 			 * We set 'need_dynrela' here in the first pass because
 			 * the .toc section's 'need_dynrela' values are
@@ -3122,8 +3133,10 @@ static void kpatch_create_intermediate_sections(struct kpatch_elf *kelf,
 			 * internal symbol function pointer check which is done
 			 * via .toc indirection in need_dynrela().
 			 */
-			if (need_dynrela(table, rela))
+			if (need_dynrela(table, rela)) {
+                // printf("Need dynrela for %s\n", rela->sym->name);
 				toc_rela(rela)->need_dynrela = 1;
+            }
 		}
 	}
 
@@ -3322,9 +3335,10 @@ static void kpatch_create_callbacks_objname_rela(struct kpatch_elf *kelf, char *
 	}
 }
 
-#ifdef __powerpc64__
-void kpatch_create_mcount_sections(struct kpatch_elf *kelf) { }
-#else
+#if 0
+// def __powerpc64__ 
+// void kpatch_create_mcount_sections(struct kpatch_elf *kelf) { }
+// #else
 /*
  * This function basically reimplements the functionality of the Linux
  * recordmcount script, so that patched functions can be recognized by ftrace.
@@ -3630,7 +3644,9 @@ int main(int argc, char *argv[])
 	kpatch_check_program_headers(kelf_base->elf);
 	kpatch_check_program_headers(kelf_patched->elf);
 
+    printf("Bundle Old Object: %s\n", orig_obj);
 	kpatch_bundle_symbols(kelf_base);
+    printf("Bundle New Object: %s\n", patched_obj);
 	kpatch_bundle_symbols(kelf_patched);
 
 	kpatch_detect_child_functions(kelf_base);
@@ -3678,7 +3694,8 @@ int main(int argc, char *argv[])
 	callbacks_exist = kpatch_include_callback_elements(kelf_patched);
 	kpatch_include_force_elements(kelf_patched);
 	new_globals_exist = kpatch_include_new_globals(kelf_patched);
-	kpatch_include_debug_sections(kelf_patched);
+
+    kpatch_include_debug_sections(kelf_patched);
 
 	kpatch_process_special_sections(kelf_patched, lookup);
 
@@ -3723,7 +3740,7 @@ int main(int argc, char *argv[])
 	kpatch_create_callbacks_objname_rela(kelf_out, parent_name);
 	kpatch_build_strings_section_data(kelf_out);
 
-	kpatch_create_mcount_sections(kelf_out);
+	// kpatch_create_mcount_sections(kelf_out);
 
 	/*
 	 *  At this point, the set of output sections and symbols is

@@ -93,33 +93,36 @@ static int maybe_discarded_sym(const char *name)
 }
 
 static int locals_match(struct lookup_table *table, int idx,
-			struct sym_compare_type *child_locals)
+                        struct sym_compare_type *child_locals)
 {
 	struct sym_compare_type *child;
 	struct object_symbol *sym;
-	int i, found;
+	int i, found, ret = 1;
 
 	i = idx + 1;
-	for_each_obj_symbol_continue(i, sym, table) {
-		if (sym->type == STT_FILE)
-			break;
-		if (sym->bind != STB_LOCAL)
-			continue;
-		if (sym->type != STT_FUNC && sym->type != STT_OBJECT)
-			continue;
+    for_each_obj_symbol_continue(i, sym, table) {
+        if (sym->type == STT_FILE)
+            break;
+        if (sym->bind != STB_LOCAL)
+            continue;
+        if (sym->type != STT_FUNC && sym->type != STT_OBJECT)
+            continue;
 
-		found = 0;
-		for (child = child_locals; child->name; child++) {
-			if (child->type == sym->type &&
-			    !strcmp(child->name, sym->name)) {
-				found = 1;
-				break;
-			}
-		}
+        found = 0;
+        for (child = child_locals; child->name; child++) {
+            if (child->type == sym->type &&
+                !strcmp(child->name, sym->name)) {
+                found = 1;
+                break;
+            }
+        }
 
-		if (!found)
-			return 0;
-	}
+        if (!found) {
+            // fprintf(stderr, "Could not find %s (type=%d) in patch\n",
+            //         sym->name, sym->type);
+            ret = 0;
+        }
+    }
 
 	for (child = child_locals; child->name; child++) {
 		/*
@@ -147,11 +150,14 @@ static int locals_match(struct lookup_table *table, int idx,
 			}
 		}
 
-		if (!found)
-			return 0;
+		if (!found) {
+            // fprintf(stderr, "Could not find %s (type=%d) in binary\n",
+            //         child->name, child->type);
+			ret = 0;
+        }
 	}
 
-	return 1;
+	return ret;
 }
 
 static void find_local_syms(struct lookup_table *table, char *hint,
@@ -166,11 +172,16 @@ static void find_local_syms(struct lookup_table *table, char *hint,
 	for_each_obj_symbol(i, sym, table) {
 		if (sym->type != STT_FILE)
 			continue;
-		if (strcmp(hint, sym->name))
+
+		if (strcmp(hint, sym->name) != 0)
 			continue;
+
+        printf("Match Sections: %s <-> %s\n", hint, sym->name);
+
 		if (!locals_match(table, i, child_locals))
 			continue;
-		if (table->local_syms)
+
+        if (table->local_syms)
 			ERROR("found duplicate matches for %s local symbols in %s symbol table",
 			      hint, table->objname);
 
@@ -215,8 +226,9 @@ static void symtab_read(struct lookup_table *table, char *path)
 	bool skip = false;
 	char line[256], name[256], size[16], type[16], bind[16], ndx[16];
 
-	if ((file = fopen(path, "r")) == NULL)
-		ERROR("fopen");
+	if ((file = fopen(path, "r")) == NULL) {
+		ERROR("fopen: %s", path);
+    }
 
 	/*
 	 * First, get an upper limit on the number of entries for allocation
