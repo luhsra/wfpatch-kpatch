@@ -1847,6 +1847,13 @@ static void kpatch_migrate_symbols(struct list_head *src,
 	}
 }
 
+static int section_compare_offset(const void *a, const void*b){
+    struct section * sec1 = *(struct section **)a;
+    struct section * sec2 = *(struct section **)b;
+
+    return (int)(sec1->sh.sh_offset - sec2->sh.sh_offset);
+}
+
 static void kpatch_migrate_included_elements(struct kpatch_elf *kelf, struct kpatch_elf **kelfout)
 {
 	struct section *sec, *safesec;
@@ -1862,17 +1869,40 @@ static void kpatch_migrate_included_elements(struct kpatch_elf *kelf, struct kpa
 	INIT_LIST_HEAD(&out->symbols);
 	INIT_LIST_HEAD(&out->strings);
 
+    // In order to not break jump tables, which use inter-section
+    // relative offsets, we dump the sections from the original elf
+    // sorted by their file-relative offset into the patch file.
+    
+    unsigned section_count = 0;
+    list_for_each_entry_safe(sec, safesec, &kelf->sections, list) {
+		if (!sec->include)
+			continue;
+        section_count ++;
+    }
+    
+    struct section *sections[section_count];
+    section_count = 0;
+
 	/* migrate included sections from kelf to out */
 	list_for_each_entry_safe(sec, safesec, &kelf->sections, list) {
 		if (!sec->include)
 			continue;
 		list_del(&sec->list);
-		list_add_tail(&sec->list, &out->sections);
+        sections[section_count++] = sec;
 		sec->index = 0;
 		if (!is_rela_section(sec) && sec->secsym && !sec->secsym->include)
 			/* break link to non-included section symbol */
 			sec->secsym = NULL;
 	}
+    printf("Included %d sections\n", section_count);
+    qsort(sections, section_count, sizeof(struct section *),
+          section_compare_offset);
+    for (unsigned i = 0; i < section_count; i++) {
+        sec = sections[i];
+        list_add_tail(&sec->list, &out->sections);
+    }
+    
+    
 
 	/* migrate included symbols from kelf to out */
 	list_for_each_entry_safe(sym, safesym, &kelf->symbols, list) {
@@ -2473,6 +2503,7 @@ static void kpatch_check_relocations(struct kpatch_elf *kelf)
 	struct rela *rela;
 	struct section *sec;
 	Elf_Data *sdata;
+    bool jump_table_msg = false;
 
 	list_for_each_entry(sec, &kelf->sections, list) {
 		if (!is_rela_section(sec))
@@ -2480,10 +2511,32 @@ static void kpatch_check_relocations(struct kpatch_elf *kelf)
 		list_for_each_entry(rela, &sec->relas, list) {
 			if (rela->sym->sec) {
 				sdata = rela->sym->sec->data;
-				if (rela->addend > (long)sdata->d_size) {
-					ERROR("out-of-range relocation %s+%lx in %s", rela->sym->sec->name,
-							rela->addend, sec->name);
-				}
+                // Sometimes tehre are broken relocations
+                if (rela->addend > (long)sdata->d_size) {
+                    // We can ignore out-of-range relocations between
+                    // the .rodata and the .text section of a
+                    // function. Such bad relocations happen on jump tables.
+                    char *target = rela->sym->sec->name;
+                    char *modify = sec->base->name;
+                    if (!strncmp(target, ".text", 5)
+                        && !strncmp(modify, ".rodata", 7)
+                        && !strcmp(target + 5, modify + 7)) {
+                        if (!jump_table_msg) {
+                            printf("[%s] Jump table in %s\n",
+                                   kelf->name,
+                                   sec->base->name
+                                );
+                            jump_table_msg = true;
+                        }
+                        continue;
+                    }
+
+                    // otherwise (no jump table)
+                    ERROR("[%s] out-of-range relocation %s+%lx in %s",
+                          kelf->name,
+                          rela->sym->sec->name,
+                          rela->addend, sec->name);
+                }
 			}
 		}
 	}
@@ -3644,10 +3697,14 @@ int main(int argc, char *argv[])
 	kpatch_check_program_headers(kelf_base->elf);
 	kpatch_check_program_headers(kelf_patched->elf);
 
-    printf("Bundle Old Object: %s\n", orig_obj);
+
+    kpatch_check_relocations(kelf_base);
+    kpatch_check_relocations(kelf_patched);
+
+
 	kpatch_bundle_symbols(kelf_base);
-    printf("Bundle New Object: %s\n", patched_obj);
 	kpatch_bundle_symbols(kelf_patched);
+
 
 	kpatch_detect_child_functions(kelf_base);
 	kpatch_detect_child_functions(kelf_patched);
@@ -3672,6 +3729,7 @@ int main(int argc, char *argv[])
 	kpatch_replace_sections_syms(kelf_base);
 	kpatch_replace_sections_syms(kelf_patched);
 
+
 	kpatch_correlate_elfs(kelf_base, kelf_patched);
 	kpatch_correlate_static_local_variables(kelf_base, kelf_patched);
 
@@ -3686,6 +3744,7 @@ int main(int argc, char *argv[])
 	kpatch_elf_teardown(kelf_base);
 	kpatch_elf_free(kelf_base);
 
+
 	kpatch_mark_ignored_functions_same(kelf_patched);
 	kpatch_mark_ignored_sections_same(kelf_patched);
 
@@ -3695,9 +3754,11 @@ int main(int argc, char *argv[])
 	kpatch_include_force_elements(kelf_patched);
 	new_globals_exist = kpatch_include_new_globals(kelf_patched);
 
+
     kpatch_include_debug_sections(kelf_patched);
 
 	kpatch_process_special_sections(kelf_patched, lookup);
+
 
 	kpatch_print_changes(kelf_patched);
 	kpatch_dump_kelf(kelf_patched);
