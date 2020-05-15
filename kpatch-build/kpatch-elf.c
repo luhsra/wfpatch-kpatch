@@ -368,6 +368,7 @@ struct kpatch_elf *kpatch_elf_open(const char *name)
 	INIT_LIST_HEAD(&kelf->sections);
 	INIT_LIST_HEAD(&kelf->symbols);
 	INIT_LIST_HEAD(&kelf->strings);
+    kelf->name = strdup(name);
 
 	/* read and store section, symbol entries from file */
 	kelf->elf = elf;

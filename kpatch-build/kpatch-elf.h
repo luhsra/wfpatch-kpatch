@@ -104,6 +104,7 @@ struct string {
 
 struct kpatch_elf {
 	Elf *elf;
+    char * name;
 	struct list_head sections;
 	struct list_head symbols;
 	struct list_head strings;
