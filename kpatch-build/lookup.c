@@ -118,8 +118,8 @@ static int locals_match(struct lookup_table *table, int idx,
         }
 
         if (!found) {
-            // fprintf(stderr, "Could not find %s (type=%d) in patch\n",
-            //         sym->name, sym->type);
+            fprintf(stderr, "Could not find %s (type=%d) in patch\n\n",
+                    sym->name, sym->type);
             ret = 0;
         }
     }
@@ -131,6 +131,10 @@ static int locals_match(struct lookup_table *table, int idx,
 		 */
 		if (maybe_discarded_sym(child->name))
 			continue;
+
+        // Sometimes these symbols are reordered.
+        if (strstr(child->name, "__PRETTY_FUNCTION__"))
+            continue;
 
 		found = 0;
 		i = idx + 1;
@@ -151,8 +155,8 @@ static int locals_match(struct lookup_table *table, int idx,
 		}
 
 		if (!found) {
-            // fprintf(stderr, "Could not find %s (type=%d) in binary\n",
-            //         child->name, child->type);
+             fprintf(stderr, "Could not find %s (type=%d) in binary\n",
+                     child->name, child->type);
 			ret = 0;
         }
 	}
@@ -189,7 +193,7 @@ static void find_local_syms(struct lookup_table *table, char *hint,
 	}
 
 	if (!table->local_syms)
-		ERROR("couldn't find matching %s local symbols in %s symbol table",
+		ERROR("couldn't find matching '%s' local symbols in %s symbol table",
 		      hint, table->objname);
 }
 
@@ -224,7 +228,7 @@ static void symtab_read(struct lookup_table *table, char *path)
 	int alloc_nr = 0, i = 0;
 	int matched;
 	bool skip = false;
-	char line[256], name[256], size[16], type[16], bind[16], ndx[16];
+	char line[1024], name[1024], size[16], type[16], bind[16], ndx[16];
 
 	if ((file = fopen(path, "r")) == NULL) {
 		ERROR("fopen: %s", path);
@@ -234,7 +238,7 @@ static void symtab_read(struct lookup_table *table, char *path)
 	 * First, get an upper limit on the number of entries for allocation
 	 * purposes:
 	 */
-	while (fgets(line, 256, file))
+	while (fgets(line, 1024, file))
 		alloc_nr++;
 
 	table->obj_syms = malloc(alloc_nr * sizeof(*table->obj_syms));
@@ -250,8 +254,7 @@ static void symtab_read(struct lookup_table *table, char *path)
 	rewind(file);
 
 	/* Now read the actual entries: */
-	while (fgets(line, 256, file)) {
-
+	while (fgets(line, 1024, file)) {
 		/*
 		 * On powerpc, "readelf -s" shows both .dynsym and .symtab
 		 * tables.  .dynsym is just a subset of .symtab, so skip it to
@@ -264,7 +267,7 @@ static void symtab_read(struct lookup_table *table, char *path)
 			skip = false;
 			continue;
 		}
-
+        
         matched = sscanf(line, "%*s %lx %s %s %s %*s %s %s\n",
                          &addr, size, type, bind, ndx, name);
 
@@ -286,7 +289,6 @@ static void symtab_read(struct lookup_table *table, char *path)
             table->exp_nr ++;
             continue;
         }
-
 
 		if (skip)
 			continue;
@@ -342,81 +344,6 @@ static void symtab_read(struct lookup_table *table, char *path)
 
 	fclose(file);
 }
-
-/*
- * The Module.symvers file format is one of the following, depending on kernel
- * version:
- *
- * <CRC>	<Symbol>	<Module>	<Export Type>
- * <CRC>	<Symbol>	<Namespace>	<Module>	<Export Type>
- * <CRC>	<Symbol>	<Module>	<Export Type>	<Namespace>
- *
- * All we care about is Symbol and Module.  Since the format is unpredictable,
- * we have to dynamically determine which column is Module by looking for
- * "vmlinux".
- */
-#if 0
-static void symvers_read(struct lookup_table *table, char *path)
-{
-	FILE *file;
-	int i, column, mod_column = 0;
-	char line[4096];
-	char *tmp, *objname, *symname;
-
-	if ((file = fopen(path, "r")) == NULL)
-		ERROR("fopen");
-
-	while (fgets(line, 4096, file)) {
-		table->exp_nr++;
-
-		if (mod_column)
-			continue;
-
-		/* Find the module column */
-		for (column = 1, tmp = line; (tmp = strchr(tmp, '\t')); column++) {
-			tmp++;
-			if (*tmp && !strncmp(tmp, "vmlinux", 7))
-				mod_column = column;
-		}
-	}
-
-	if (table->exp_nr && !mod_column)
-		ERROR("Module.symvers: invalid format");
-
-	table->exp_syms = malloc(table->exp_nr * sizeof(*table->exp_syms));
-	if (!table->exp_syms)
-		ERROR("malloc table.exp_syms");
-	memset(table->exp_syms, 0,
-	       table->exp_nr * sizeof(*table->exp_syms));
-
-	rewind(file);
-	for (i = 0; fgets(line, 4096, file); i++) {
-		char *name = NULL, *mod = NULL;
-
-		for (column = 1, tmp = line; (tmp = strchr(tmp, '\t')); column++) {
-			*tmp++ = '\0';
-			if (*tmp && column == 1)
-				name = tmp;
-			else if (*tmp && column == mod_column)
-				mod = tmp;
-		}
-
-		if (!name || !mod)
-			continue;
-
-		symname = strdup(name);
-		if (!symname)
-			perror("strdup");
-
-		objname = make_modname(mod);
-
-		table->exp_syms[i].name = symname;
-		table->exp_syms[i].objname = objname;
-	}
-
-	fclose(file);
-}
-#endif
 
 struct lookup_table *lookup_open(char *symtab_path, char *objname,
 				 char *symvers_path, char *hint,

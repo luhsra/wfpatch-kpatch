@@ -327,6 +327,13 @@ static int is_special_static(struct symbol *sym)
 	};
 	char **prefix;
 
+    static char *postfixes[] = {
+		"__FUNCTION__",
+        "__PRETTY_FUNCTION__",
+		NULL,
+	};
+    char **postfix;
+
 	if (!sym)
 		return 0;
 
@@ -349,6 +356,15 @@ static int is_special_static(struct symbol *sym)
 	for (prefix = prefixes; *prefix; prefix++)
 		if (!strncmp(sym->name, *prefix, strlen(*prefix)))
 			return 1;
+
+    size_t len = strlen(sym->name);
+    for (postfix = postfixes; *postfix; postfix++) {
+        size_t len_postfix = strlen(*postfix);
+        if (len < len_postfix) continue;
+        continue;
+		if (!strcmp(sym->name+len-len_postfix, *postfix))
+			return 1;
+    }
 
 	return 0;
 }
@@ -1620,7 +1636,7 @@ static void kpatch_verify_patchability(struct kpatch_elf *kelf)
 		}
 	}
 
-	if (errs)
+	if (errs && getenv("FORCE") == NULL)
 		DIFF_FATAL("%d unsupported section change(s)", errs);
 }
 
@@ -3698,8 +3714,8 @@ int main(int argc, char *argv[])
 	kpatch_check_program_headers(kelf_patched->elf);
 
 
-    kpatch_check_relocations(kelf_base);
-    kpatch_check_relocations(kelf_patched);
+    // kpatch_check_relocations(kelf_base);
+    // kpatch_check_relocations(kelf_patched);
 
 
 	kpatch_bundle_symbols(kelf_base);
@@ -3763,7 +3779,7 @@ int main(int argc, char *argv[])
 	kpatch_print_changes(kelf_patched);
 	kpatch_dump_kelf(kelf_patched);
 
-	kpatch_verify_patchability(kelf_patched);
+    kpatch_verify_patchability(kelf_patched);
 
 	if (!num_changed && !new_globals_exist) {
 		if (callbacks_exist)
