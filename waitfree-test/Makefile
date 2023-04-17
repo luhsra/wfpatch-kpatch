@@ -9,7 +9,7 @@ symtab: bin-old
 	readelf -s bin-old > symtab
 
 Module.symvers:
-	@echo "Muss manuell erstellt werden (nicht löschen)"
+	@echo "Not needed"
 
 bin-old: obj1-old.o obj2.o
 	gcc -o $@ $^
